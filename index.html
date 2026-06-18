@@ -1,0 +1,33 @@
+<html><head><title>Open Seas</title><style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#78c7ff;font-family:Georgia,serif;color:#fff}
+#hud{position:fixed;inset:18px auto auto 18px;text-shadow:0 2px 8px #002;font-size:18px;line-height:1.5;pointer-events:none}
+#vignette{position:fixed;inset:0;box-shadow:inset 0 0 120px #0138;pointer-events:none}
+canvas{display:block}
+</style></head><body><div id="hud"></div><div id="vignette"></div>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js';
+const scene=new THREE.Scene(),hud=document.querySelector('#hud'),clock=new THREE.Clock();
+scene.background=new THREE.Color(0x7cc9ff);scene.fog=new THREE.Fog(0x7cc9ff,70,230);
+const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,.1,500),renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(devicePixelRatio);document.body.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xdff7ff,0x226677,2.4));let sun=new THREE.DirectionalLight(0xffe2a0,2);sun.position.set(-40,70,30);scene.add(sun);
+const seaGeo=new THREE.PlaneGeometry(520,520,110,110),seaMat=new THREE.MeshStandardMaterial({color:0x0872ba,roughness:.55,metalness:.12});
+const sea=new THREE.Mesh(seaGeo,seaMat);sea.rotation.x=-Math.PI/2;scene.add(sea);const seaPos=seaGeo.attributes.position;
+function hull(color=0x6b3119){let g=new THREE.Group(),base=new THREE.Mesh(new THREE.BoxGeometry(7,1.6,13),new THREE.MeshStandardMaterial({color})),mast=new THREE.Mesh(new THREE.CylinderGeometry(.16,.22,8),new THREE.MeshStandardMaterial({color:0x2b160d})),sail=new THREE.Mesh(new THREE.ConeGeometry(2.9,5,3),new THREE.MeshStandardMaterial({color:0xf6ead0,side:2}));base.position.y=1;g.add(base);mast.position.y=5;sail.position.set(0,5.2,-.4);sail.rotation.y=Math.PI/2;g.add(mast,sail);return g}
+function island(x,z,s=1){let g=new THREE.Group(),sand=new THREE.Mesh(new THREE.CylinderGeometry(8*s,11*s,2,16),new THREE.MeshStandardMaterial({color:0xd9bd74})),hill=new THREE.Mesh(new THREE.ConeGeometry(6*s,8*s,18),new THREE.MeshStandardMaterial({color:0x2c8b4b}));sand.position.y=.6;hill.position.y=5;g.add(sand,hill);for(let i=0;i<3;i++){let palm=new THREE.Mesh(new THREE.CylinderGeometry(.18*s,.28*s,5*s),new THREE.MeshStandardMaterial({color:0x76502b})),leaf=new THREE.Mesh(new THREE.ConeGeometry(2*s,3*s,5),new THREE.MeshStandardMaterial({color:0x167044}));palm.position.set((i-1)*3*s,3*s,2*s);leaf.position.copy(palm.position).add(new THREE.Vector3(0,3*s,0));g.add(palm,leaf)}g.position.set(x,0,z);g.userData.treasure=1;scene.add(g);return g}
+const player=hull(0x74361d);player.position.y=1.2;scene.add(player);let speed=0,turn=0,treasure=0,hullHp=100,cool=0,keys={};
+const islands=[island(-55,-45,1.1),island(72,-20,.9),island(-25,82,1.25),island(88,76,1)];
+const enemies=[[-40,35],[45,45],[95,-72],[-85,-88]].map(([x,z])=>{let e=hull(0x1f252f);e.position.set(x,1.2,z);e.userData={hp:3,cool:0};scene.add(e);return e});
+const shots=[];function ball(from,dir,bad=0){let b=new THREE.Mesh(new THREE.SphereGeometry(.45,8,8),new THREE.MeshStandardMaterial({color:bad?0xff4e34:0x111111}));b.position.copy(from).add(new THREE.Vector3(0,1.2,0));b.userData={v:dir.clone().multiplyScalar(60),life:2.2,bad};shots.push(b);scene.add(b)}
+function splash(p){let r=new THREE.Mesh(new THREE.RingGeometry(.5,2.8,22),new THREE.MeshBasicMaterial({color:0xbdefff,transparent:true,opacity:.8,side:2}));r.rotation.x=-Math.PI/2;r.position.copy(p);r.userData.life=.45;shots.push(r);scene.add(r)}
+addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=1;if((e.code==='Space'||e.key==='f')&&cool<=0){ball(player.position,new THREE.Vector3(Math.sin(player.rotation.y),0,Math.cos(player.rotation.y)));cool=.55}});
+addEventListener('keyup',e=>keys[e.key.toLowerCase()]=0);addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+function tick(){let t=clock.getElapsedTime(),dt=Math.min(clock.getDelta(),.033);speed+=(keys.w||keys.arrowup?0.12:0);speed-=(keys.s||keys.arrowdown?0.08:0);speed*=.965;turn=((keys.a||keys.arrowleft)?1:0)-((keys.d||keys.arrowright)?1:0);player.rotation.y+=turn*dt*1.8;player.position.x+=Math.sin(player.rotation.y)*speed;player.position.z+=Math.cos(player.rotation.y)*speed;player.position.y=1.15+Math.sin(t*3)*.18;cool-=dt;
+for(let i=0;i<seaPos.count;i++){let x=seaPos.getX(i),y=seaPos.getY(i);seaPos.setZ(i,Math.sin(x*.13+t*1.7)*.75+Math.cos(y*.11+t*1.2)*.55)}seaPos.needsUpdate=true;
+islands.forEach(i=>{if(i.userData.treasure&&i.position.distanceTo(player.position)<15){treasure+=25;i.userData.treasure=0;i.scale.setScalar(.86)}});
+enemies.forEach(e=>{if(e.userData.hp<=0)return;e.lookAt(player.position.x,1.2,player.position.z);e.translateZ(Math.min(.08,e.position.distanceTo(player.position)*.0009));e.userData.cool-=dt;if(e.position.distanceTo(player.position)<48&&e.userData.cool<=0){ball(e.position,new THREE.Vector3(Math.sin(e.rotation.y),0,Math.cos(e.rotation.y)),1);e.userData.cool=1.7}});
+shots.slice().forEach(s=>{s.userData.life-=dt;if(s.userData.v)s.position.addScaledVector(s.userData.v,dt);if(s.userData.bad&&s.position.distanceTo(player.position)<4){hullHp-=8;splash(s.position);s.userData.life=0}enemies.forEach(e=>{if(!s.userData.bad&&e.userData.hp>0&&s.position.distanceTo(e.position)<4){e.userData.hp--;treasure+=10;splash(s.position);s.userData.life=0;if(e.userData.hp<=0){treasure+=60;e.visible=false}}});if(s.userData.life<=0){scene.remove(s);shots.splice(shots.indexOf(s),1)}});
+camera.position.lerp(player.position.clone().add(new THREE.Vector3(-Math.sin(player.rotation.y)*23,15,-Math.cos(player.rotation.y)*23)),.08);camera.lookAt(player.position.clone().add(new THREE.Vector3(0,3,0)));
+hud.innerHTML=`Treasure ${treasure}<br>Hull ${Math.max(0,Math.round(hullHp))}<br>Enemy ships ${enemies.filter(e=>e.userData.hp>0).length}`;renderer.render(scene,camera);requestAnimationFrame(tick)}
+tick();
+</script></body></html>
