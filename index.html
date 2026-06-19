@@ -1,48 +1,375 @@
-<html><head><title>Open Seas</title><style>
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#78c7ff;font-family:Georgia,serif;color:#fff}
-#hud{position:fixed;inset:18px auto auto 18px;text-shadow:0 2px 8px #002;font-size:18px;line-height:1.5;pointer-events:none}
-#ctl{position:fixed;left:18px;bottom:18px;display:flex;gap:10px}#ctl button{font:700 18px Georgia,serif;padding:14px 22px;border:0;background:#fff8;color:#123}
-#end{position:fixed;inset:0;display:none;place-items:center;text-align:center;background:#0028;text-shadow:0 3px 12px #001;font:700 46px Georgia,serif;pointer-events:none}
-#vignette{position:fixed;inset:0;box-shadow:inset 0 0 120px #0138;pointer-events:none}
-canvas{display:block}
-</style></head><body><div id="hud"></div><div id="end"></div><div id="ctl"><button id="left">LEFT</button><button id="right">RIGHT</button><button id="fish">FISH</button></div><div id="vignette"></div>
-<script type="module">
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js';
-const scene=new THREE.Scene(),hud=document.querySelector('#hud'),end=document.querySelector('#end'),clock=new THREE.Clock(),level=Math.max(1,+new URLSearchParams(location.search).get('level')||1);
-scene.background=new THREE.Color(0x7cc9ff);scene.fog=new THREE.Fog(0x7cc9ff,70,230);
-const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,.1,500),renderer=new THREE.WebGLRenderer({antialias:true});
-renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(devicePixelRatio);document.body.appendChild(renderer.domElement);
-scene.add(new THREE.HemisphereLight(0xdff7ff,0x226677,2.4));let sun=new THREE.DirectionalLight(0xffe2a0,2);sun.position.set(-40,70,30);scene.add(sun);
-const seaGeo=new THREE.PlaneGeometry(520,520,110,110),seaMat=new THREE.MeshStandardMaterial({color:0x0b6f9f,roughness:.32,metalness:.22});
-const sea=new THREE.Mesh(seaGeo,seaMat);sea.rotation.x=-Math.PI/2;scene.add(sea);const seaPos=seaGeo.attributes.position;
-let fc=document.createElement('canvas'),fx=fc.getContext('2d');fc.width=fc.height=256;fx.strokeStyle='#d8fbff55';for(let i=0;i<90;i++){fx.beginPath();fx.arc(Math.random()*256,Math.random()*256,8+Math.random()*38,Math.random()*6,Math.random()*6+1.4);fx.stroke()}let ft=new THREE.CanvasTexture(fc);ft.wrapS=ft.wrapT=THREE.RepeatWrapping;ft.repeat.set(8,8);
-const foamGeo=new THREE.PlaneGeometry(520,520,70,70),foam=new THREE.Mesh(foamGeo,new THREE.MeshBasicMaterial({map:ft,transparent:true,opacity:.35,depthWrite:false}));foam.rotation.x=-Math.PI/2;foam.position.y=.08;scene.add(foam);const foamPos=foamGeo.attributes.position;
-function hull(color=0x6b3119){let g=new THREE.Group(),wood=new THREE.MeshStandardMaterial({color,roughness:.8}),cloth=new THREE.MeshStandardMaterial({color:0xf6ead0,side:2,roughness:.9}),base=new THREE.Mesh(new THREE.BoxGeometry(6.2,1.4,11),wood),bow=new THREE.Mesh(new THREE.ConeGeometry(3.1,4,4),wood),deck=new THREE.Mesh(new THREE.BoxGeometry(5, .35,8),new THREE.MeshStandardMaterial({color:0x9b6a3a,roughness:.75})),cabin=new THREE.Mesh(new THREE.BoxGeometry(2.4,1.1,2.2),new THREE.MeshStandardMaterial({color:0xc79a58,roughness:.7})),mast=new THREE.Mesh(new THREE.CylinderGeometry(.16,.22,8),new THREE.MeshStandardMaterial({color:0x2b160d})),sail=new THREE.Mesh(new THREE.ConeGeometry(2.9,5,3),cloth),spar=new THREE.Mesh(new THREE.CylinderGeometry(.08,.08,5.6),new THREE.MeshStandardMaterial({color:0x2b160d}));base.position.y=1;bow.position.set(0,1,6.8);bow.rotation.x=Math.PI/2;deck.position.y=1.9;cabin.position.set(0,2.65,-2.2);mast.position.y=5;sail.position.set(0,5.2,-.4);sail.rotation.y=Math.PI/2;spar.position.set(0,4.6,-.2);spar.rotation.z=Math.PI/2;g.add(base,bow,deck,cabin,mast,sail,spar);return g}
-function island(x,z,s=1){let g=new THREE.Group(),sand=new THREE.Mesh(new THREE.CylinderGeometry(8*s,11*s,2,16),new THREE.MeshStandardMaterial({color:0xd9bd74})),hill=new THREE.Mesh(new THREE.ConeGeometry(6*s,8*s,18),new THREE.MeshStandardMaterial({color:0x2c8b4b}));sand.position.y=.6;hill.position.y=5;g.add(sand,hill);for(let i=0;i<3;i++){let palm=new THREE.Mesh(new THREE.CylinderGeometry(.18*s,.28*s,5*s),new THREE.MeshStandardMaterial({color:0x76502b})),leaf=new THREE.Mesh(new THREE.ConeGeometry(2*s,3*s,5),new THREE.MeshStandardMaterial({color:0x167044}));palm.position.set((i-1)*3*s,3*s,2*s);leaf.position.copy(palm.position).add(new THREE.Vector3(0,3*s,0));g.add(palm,leaf)}g.position.set(x,0,z);g.userData.treasure=1;scene.add(g);return g}
-const player=hull(0x74361d);player.position.y=1.2;scene.add(player);renderer.domElement.tabIndex=0;renderer.domElement.focus();let speed=0,turn=0,heading=0,treasure=0,islandGold=0,shipGold=0,fishGold=0,fishCaught=0,hullHp=100,cool=0,fishCool=0,zoom=28,lastKey='',fireFlash=0,msg='',done=0,keys={};
-const islands=Array.from({length:3+level},(_,i)=>{let a=i*6.28/(3+level)+.6,r=58+level*8+(i%2)*32;return island(Math.cos(a)*r,Math.sin(a)*r,.85+(i%3)*.15)});
-const enemies=Array.from({length:3+level},(_,i)=>{let a=i*6.28/(3+level)+2.1,r=50+level*10+(i%2)*30,e=hull(0x1f252f);e.position.set(Math.cos(a)*r,1.2,Math.sin(a)*r);e.userData={hp:3,cool:0};scene.add(e);return e});
-const maxFish=3+level,maxTreasure=islands.length*25+enemies.length*90+maxFish*15;
-const shots=[];function ball(from,dir,bad=0){let b=new THREE.Mesh(new THREE.SphereGeometry(bad?.45:.65,12,12),new THREE.MeshStandardMaterial({color:bad?0xff4e34:0x15120f,emissive:bad?0x220000:0x000000}));b.position.copy(from).add(dir.clone().multiplyScalar(8)).add(new THREE.Vector3(0,2.2,0));b.userData={vx:dir.x*42,vz:dir.z*42,life:3,bad,hit:1};shots.push(b);scene.add(b)}
-function splash(p){let r=new THREE.Mesh(new THREE.RingGeometry(.5,2.8,22),new THREE.MeshBasicMaterial({color:0xbdefff,transparent:true,opacity:.8,side:2}));r.rotation.x=-Math.PI/2;r.position.copy(p);r.userData.life=.45;shots.push(r);scene.add(r)}
-function fishPop(p){let f=new THREE.Mesh(new THREE.ConeGeometry(1.2,3.8,4),new THREE.MeshBasicMaterial({color:0x35d0ff}));f.position.copy(p).add(new THREE.Vector3(0,4,0));f.rotation.z=Math.PI/2;f.userData.life=2.2;shots.push(f);scene.add(f)}
-function coin(n){let c=document.createElement('canvas'),x=c.getContext('2d');c.width=128;c.height=64;x.font='700 34px Georgia';x.fillStyle='#ffd94a';x.strokeStyle='#5a3100';x.lineWidth=5;x.strokeText('+'+n,24,42);x.fillText('+'+n,24,42);let s=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),transparent:true}));s.position.copy(player.position).add(new THREE.Vector3(0,7,0));s.scale.set(7,3.5,1);s.userData={life:1.1,float:1};shots.push(s);scene.add(s)}
-function trace(a,b){let l=new THREE.Line(new THREE.BufferGeometry().setFromPoints([a,b]),new THREE.LineBasicMaterial({color:0xffee55}));l.userData.life=.18;shots.push(l);scene.add(l)}
-renderer.domElement.addEventListener('pointerdown',()=>renderer.domElement.focus());
-let L=document.querySelector('#left'),R=document.querySelector('#right'),F=document.querySelector('#fish');L.onpointerdown=()=>keys.left=1;L.onpointerup=L.onpointerleave=()=>keys.left=0;R.onpointerdown=()=>keys.right=1;R.onpointerup=R.onpointerleave=()=>keys.right=0;F.onclick=()=>fishCool<=0&&fish();
-function hit(e,p){e.userData.hp--;treasure+=10;shipGold+=10;coin(10);msg=`Hit! ${Math.max(0,e.userData.hp)} hp`;splash(p);if(e.userData.hp<=0){treasure+=60;shipGold+=60;coin(60);msg='Sunk!';e.visible=false}}
-function fire(){let dir=new THREE.Vector3(Math.sin(heading),0,Math.cos(heading));ball(player.position,dir);msg='Fire!';fireFlash=.25;cool=.55}
-function input(e,on){let k=e.key.toLowerCase(),c=e.code;lastKey=c;if(c==='KeyR'){done===2?location.search='?level='+(level+1):location.reload()}if(done)return;if(['KeyW','KeyA','KeyS','KeyD','KeyE','ArrowUp','ArrowLeft','ArrowDown','ArrowRight','Space','KeyF'].includes(c))e.preventDefault();if(k==='w'||c==='ArrowUp')keys.up=on;if(k==='s'||c==='ArrowDown')keys.down=on;if(k==='a'||c==='ArrowLeft')keys.left=on;if(k==='d'||c==='ArrowRight')keys.right=on;if(on&&(k==='e'||c==='KeyE')&&fishCool<=0)fish();if(c==='Space'||k==='f')keys.fire=on}
-addEventListener('keydown',e=>input(e,1));addEventListener('keyup',e=>input(e,0));addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
-addEventListener('wheel',e=>{zoom=Math.max(8,Math.min(34,zoom+e.deltaY*.025));e.preventDefault()},{passive:false});
-function fish(){if(zoom>14){msg='Zoom closer to fish';return}if(fishCaught>=maxFish){msg='No fish left';return}let p=player.position.clone().add(new THREE.Vector3(Math.sin(heading)*5,0,Math.cos(heading)*5));treasure+=15;fishGold+=15;coin(15);fishCaught++;msg=`Caught fish ${fishCaught}/${maxFish}! +15`;fishCool=1.8;splash(p);fishPop(p)}
-function tick(){let dt=Math.min(clock.getDelta(),.033),t=clock.elapsedTime;if(!done){speed+=(keys.up?0.12:0);speed-=(keys.down?0.08:0);speed*=.965;turn=(keys.left?1:0)-(keys.right?1:0);heading+=turn*.09;player.quaternion.setFromAxisAngle(new THREE.Vector3(0,1,0),heading);player.position.x+=Math.sin(heading)*speed+turn*.45;player.position.z+=Math.cos(heading)*speed;if(keys.fire&&cool<=0)fire();if(keys.fish&&fishCool<=0)fish();if(hullHp<=0){done=1;msg='Wrecked! Press R'}if(!enemies.some(e=>e.userData.hp>0)){done=2;msg='Victory! Press R'}}player.position.y=1.15+Math.sin(t*3)*.18;cool-=dt;fishCool-=dt;fireFlash-=dt;
-for(let i=0;i<seaPos.count;i++){let x=seaPos.getX(i),y=seaPos.getY(i);seaPos.setZ(i,Math.sin(x*.08+t*1.4)*.85+Math.cos(y*.1+t*1.1)*.55+Math.sin((x+y)*.18+t*2.6)*.18+Math.cos((x-y)*.045+t*.7)*.35)}seaGeo.computeVertexNormals();seaPos.needsUpdate=true;seaMat.color.setHSL(.53,.85,.28+Math.sin(t*.25)*.03);
-for(let i=0;i<foamPos.count;i++){let x=foamPos.getX(i),y=foamPos.getY(i);foamPos.setZ(i,Math.sin(x*.11+t*1.8)*.35+Math.cos(y*.15+t*1.4)*.22)}ft.offset.set(t*.015,t*.01);foamPos.needsUpdate=true;
-islands.forEach(i=>{if(i.userData.treasure&&i.position.distanceTo(player.position)<15){treasure+=25;islandGold+=25;coin(25);i.userData.treasure=0;i.scale.setScalar(.86)}});
-enemies.forEach(e=>{if(e.userData.hp<=0)return;let to=player.position.clone().sub(e.position),d=to.length(),dir=to.normalize();e.lookAt(player.position.x,1.2,player.position.z);e.position.addScaledVector(dir,Math.min(.08,d*.0009));e.userData.cool-=dt;if(d<48&&e.userData.cool<=0){ball(e.position,dir,1);e.userData.cool=1.7}});
-shots.slice().forEach(s=>{s.userData.life-=dt;if(s.userData.float)s.position.y+=dt*3;if(s.userData.vx!==undefined){s.position.x+=s.userData.vx*dt;s.position.z+=s.userData.vz*dt}if(s.userData.bad&&s.position.distanceTo(player.position)<4){hullHp-=8;splash(s.position);s.userData.life=0}enemies.forEach(e=>{if(s.userData.hit&&!s.userData.bad&&e.userData.hp>0&&s.position.distanceTo(e.position)<7){hit(e,s.position);s.userData.life=0}});if(s.userData.life<=0){scene.remove(s);shots.splice(shots.indexOf(s),1)}});
-camera.position.lerp(player.position.clone().add(new THREE.Vector3(-Math.sin(heading)*zoom,8+zoom*.36,-Math.cos(heading)*zoom)),.12);camera.lookAt(player.position.clone().add(new THREE.Vector3(Math.sin(heading)*8,3,Math.cos(heading)*8)));
-hud.innerHTML=`Level ${level}<br>Treasure ${treasure}<br>Fish ${fishCaught}/${maxFish}<br>Hull ${Math.max(0,Math.round(hullHp))}<br>Enemy ships ${enemies.filter(e=>e.userData.hp>0).length}<br>${msg||'Ready'}<br>${zoom<14?'Fishing ready':'Zoom closer'} ${fishCool>0?fishCool.toFixed(1):'E/FISH'}`;let stars='★★★★★☆☆☆☆☆'.slice(5-Math.ceil(Math.min(1,treasure/maxTreasure)*5),10-Math.ceil(Math.min(1,treasure/maxTreasure)*5)),islandCount=islands.filter(i=>!i.userData.treasure).length,shipCount=enemies.filter(e=>e.userData.hp<=0).length;end.style.display=done?'grid':'none';end.innerHTML=`${msg}<br>${stars}<br><span style="font-size:24px">Islands ${islandCount}/${islands.length}: ${islandGold}/${islands.length*25}<br>Ships ${shipCount}/${enemies.length}: ${shipGold}/${enemies.length*90}<br>Fish ${fishCaught}/${maxFish}: ${fishGold}/${maxFish*15}<br>Total ${treasure}/${maxTreasure}<br>Press R to ${done===2?'continue':'retry'}</span>`;renderer.render(scene,camera);requestAnimationFrame(tick)}
-tick();
-</script></body></html>
+<html>
+<head>
+  <title>Open Seas</title>
+  <style>
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#78c7ff;font-family:Georgia,serif;color:#fff}
+    #hud{position:fixed;inset:18px auto auto 18px;width:250px;font-size:18px;line-height:1.5;text-shadow:0 2px 8px #002;pointer-events:none}
+    #bar{height:20px;margin:4px 0 8px;border:2px solid #fff;background:#3108;box-shadow:0 2px 10px #002}
+    #hp{height:100%;width:100%;background:linear-gradient(90deg,#2cff69,#ffdf3a,#ff4635)}
+    #score{position:fixed;right:22px;top:16px;font:700 28px Georgia,serif;text-shadow:0 3px 10px #002;pointer-events:none}
+    #ctl{position:fixed;left:18px;bottom:18px;display:flex;gap:10px}
+    #ctl button{font:700 18px Georgia,serif;padding:14px 22px;border:0;background:#fff8;color:#123}
+    #end{position:fixed;inset:0;display:none;place-items:center;text-align:center;background:#0028;text-shadow:0 3px 12px #001;font:700 46px Georgia,serif;pointer-events:none}
+    #vignette{position:fixed;inset:0;box-shadow:inset 0 0 120px #0138;pointer-events:none}
+    canvas{display:block}
+  </style>
+</head>
+<body>
+  <div id="hud"></div>
+  <div id="score"></div>
+  <div id="end"></div>
+  <div id="ctl"><button id="left">LEFT</button><button id="right">RIGHT</button><button id="fish">FISH</button></div>
+  <div id="vignette"></div>
+  <script type="module">
+    import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js";
+    const scene = new THREE.Scene();
+    const [hud, end, scoreEl] = ["#hud", "#end", "#score"].map((id) => document.querySelector(id));
+    const clock = new THREE.Clock();
+    const level = Math.max(1, +new URLSearchParams(location.search).get("level") || 1);
+    const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 500);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const keys = {};
+    const shots = [];
+    const dancingSkeletons = [];
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(devicePixelRatio);
+    renderer.domElement.tabIndex = 0;
+    document.body.appendChild(renderer.domElement);
+    scene.background = new THREE.Color(0x7cc9ff);
+    scene.fog = new THREE.Fog(0x7cc9ff, 70, 230);
+    scene.add(new THREE.HemisphereLight(0xdff7ff, 0x226677, 2.4));
+    scene.add(new THREE.DirectionalLight(0xffe2a0, 2));
+    const mat = (color, more = {}) => new THREE.MeshStandardMaterial({ color, ...more });
+    const basic = (color, more = {}) => new THREE.MeshBasicMaterial({ color, ...more });
+    const geo = (name, ...args) => new THREE[name](...args);
+    const mesh = (name, args, material) => new THREE.Mesh(geo(name, ...args), material);
+    const put = (object, x, y, z) => {
+      object.position.set(x, y, z);
+      return object;
+    };
+    function foamMap() {
+      const canvas = document.createElement("canvas");
+      const paint = canvas.getContext("2d");
+      canvas.width = canvas.height = 256;
+      paint.strokeStyle = "#d8fbff55";
+      for (let i = 0; i < 90; i++) {
+        paint.beginPath();
+        paint.arc(Math.random() * 256, Math.random() * 256, 8 + Math.random() * 38, Math.random() * 6, Math.random() * 6 + 1.4);
+        paint.stroke();
+      }
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      texture.repeat.set(8, 8);
+      return texture;
+    }
+    const sea = mesh("PlaneGeometry", [520, 520, 110, 110], mat(0x0b6f9f, { roughness: 0.32, metalness: 0.22 }));
+    const seaGeo = sea.geometry;
+    const seaPos = seaGeo.attributes.position;
+    sea.rotation.x = -Math.PI / 2;
+    scene.add(sea);
+    const foamGeo = geo("PlaneGeometry", 520, 520, 70, 70);
+    const foamTexture = foamMap();
+    const foam = new THREE.Mesh(foamGeo, basic(0xffffff, { map: foamTexture, transparent: true, opacity: 0.35, depthWrite: false }));
+    const foamPos = foamGeo.attributes.position;
+    foam.rotation.x = -Math.PI / 2;
+    foam.position.y = 0.08;
+    scene.add(foam);
+    function part(kind, args, color, pos, rot = []) {
+      const object = mesh(kind, args, mat(color));
+      object.position.set(...pos);
+      object.rotation.set(rot[0] || 0, rot[1] || 0, rot[2] || 0);
+      return object;
+    }
+    function dog() {
+      const dog = new THREE.Group();
+      const parts = [["BoxGeometry", [1.4, 0.65, 2], 0x8a5a32, [0, 0.45, 0]], ["BoxGeometry", [0.8, 0.7, 0.8], 0x8a5a32, [0, 0.75, 1.05]], ["ConeGeometry", [0.25, 0.6, 4], 0x2b1b12, [-0.55, 1.05, 1.08]], ["ConeGeometry", [0.25, 0.6, 4], 0x2b1b12, [0.55, 1.05, 1.08]], ["CylinderGeometry", [0.08, 0.08, 1.1], 0x2b1b12, [0, 0.65, -1.25], [1.2, 0, 0]]];
+      parts.forEach((p) => dog.add(part(...p)));
+      dog.position.set(1.8, 2.35, -4.1);
+      return dog;
+    }
+    function fruitHat() {
+      const hat = new THREE.Group();
+      for (let i = 0; i < 5; i++) {
+        const kind = i % 2 ? "SphereGeometry" : "ConeGeometry";
+        const args = i % 2 ? [0.45, 12, 8] : [0.45, 1.1, 8];
+        hat.add(put(mesh(kind, args, mat([0xff3355, 0xffd33d, 0x34d058][i % 3])), (i - 2) * 0.55, 8.5 + Math.sin(i) * 0.25, -0.3));
+      }
+      hat.visible = false;
+      return hat;
+    }
+    function skeleton(scale = 1) {
+      const bones = new THREE.Group();
+      const parts = [["SphereGeometry", [0.55 * scale, 12, 8], [0, 1.7, 0]], ["CylinderGeometry", [0.08 * scale, 0.08 * scale, 1.5 * scale, 8], [0, 0.85, 0]], ["CylinderGeometry", [0.08 * scale, 0.08 * scale, 1.5 * scale, 8], [-0.95 * scale, 0.85 * scale, 0], [0, 0, 1.2]], ["CylinderGeometry", [0.08 * scale, 0.08 * scale, 1.5 * scale, 8], [0.95 * scale, 0.85 * scale, 0], [0, 0, 1.2]], ["CylinderGeometry", [0.08 * scale, 0.08 * scale, 1.1 * scale, 8], [-0.45 * scale, 0.08 * scale, 0], [0, 0, 0.45]], ["CylinderGeometry", [0.08 * scale, 0.08 * scale, 1.1 * scale, 8], [0.45 * scale, 0.08 * scale, 0], [0, 0, 0.45]]];
+      parts.forEach((p) => bones.add(part(p[0], p[1], 0xf8f3df, p[2], p[3] || [])));
+      return bones;
+    }
+    function hull(color = 0x6b3119) {
+      const boat = new THREE.Group();
+      const wood = mat(color, { roughness: 0.8 });
+      const mastMat = mat(0x2b160d);
+      const pieces = [new THREE.Mesh(geo("BoxGeometry", 6.2, 1.4, 11), wood), new THREE.Mesh(geo("ConeGeometry", 3.1, 4, 4), wood), mesh("BoxGeometry", [5, 0.35, 8], mat(0x9b6a3a, { roughness: 0.75 })), mesh("BoxGeometry", [2.4, 1.1, 2.2], mat(0xc79a58, { roughness: 0.7 })), new THREE.Mesh(geo("CylinderGeometry", 0.16, 0.22, 8), mastMat), mesh("ConeGeometry", [2.9, 5, 3], mat(0xf6ead0, { side: 2, roughness: 0.9 })), new THREE.Mesh(geo("CylinderGeometry", 0.08, 0.08, 5.6), mastMat)];
+      [[0, 1, 0], [0, 1, 6.8], [0, 1.9, 0], [0, 2.65, -2.2], [0, 5, 0], [0, 5.2, -0.4], [0, 4.6, -0.2]].forEach((p, i) => pieces[i].position.set(...p));
+      pieces[1].rotation.x = Math.PI / 2;
+      pieces[5].rotation.y = Math.PI / 2;
+      pieces[6].rotation.z = Math.PI / 2;
+      boat.userData.dog = dog();
+      boat.userData.hat = fruitHat();
+      boat.add(...pieces, boat.userData.dog, boat.userData.hat);
+      return boat;
+    }
+    function island(x, z, scale = 1) {
+      const island = new THREE.Group();
+      const sand = put(mesh("CylinderGeometry", [8 * scale, 11 * scale, 2, 16], mat(0xd9bd74)), 0, 0.6, 0);
+      const hill = put(mesh("ConeGeometry", [6 * scale, 8 * scale, 18], mat(0x2c8b4b)), 0, 5, 0);
+      island.add(sand, hill);
+      for (let i = 0; i < 3; i++) {
+        const trunk = put(mesh("CylinderGeometry", [0.18 * scale, 0.28 * scale, 5 * scale], mat(0x76502b)), (i - 1) * 3 * scale, 3 * scale, 2 * scale);
+        const leaf = put(mesh("ConeGeometry", [2 * scale, 3 * scale, 5], mat(0x167044)), trunk.position.x, trunk.position.y + 3 * scale, trunk.position.z);
+        island.add(trunk, leaf);
+      }
+      for (let i = 0; i < 2; i++) {
+        const bones = skeleton(0.8 * scale);
+        const angle = i ? 2.45 : 5.55;
+        bones.position.set(Math.cos(angle) * 9.2 * scale, 0.95, Math.sin(angle) * 9.2 * scale);
+        bones.userData = { baseY: bones.position.y, dance: i + dancingSkeletons.length };
+        bones.rotation.y = i * 1.7;
+        dancingSkeletons.push(bones);
+        island.add(bones);
+      }
+      island.position.set(x, 0, z);
+      island.userData.treasure = 1;
+      scene.add(island);
+      return island;
+    }
+    const player = hull(0x74361d);
+    scene.add(put(player, 0, 1.2, 0));
+    let speed = 0, heading = 0, treasure = 0, islandGold = 0, shipGold = 0, fishGold = 0;
+    let fishCaught = 0, hullHp = 100, cool = 0, zoom = 28, msg = "", done = 0;
+    const islands = Array.from({ length: 3 + level }, (_, i) => {
+      const angle = i * 6.28 / (3 + level) + 0.6;
+      const radius = 58 + level * 8 + (i % 2) * 32;
+      return island(Math.cos(angle) * radius, Math.sin(angle) * radius, 0.85 + (i % 3) * 0.15);
+    });
+    const enemies = Array.from({ length: 3 + level }, (_, i) => {
+      const angle = i * 6.28 / (3 + level) + 2.1;
+      const radius = 50 + level * 10 + (i % 2) * 30;
+      const enemy = put(hull(0x1f252f), Math.cos(angle) * radius, 1.2, Math.sin(angle) * radius);
+      enemy.userData.hp = 3;
+      enemy.userData.cool = 0;
+      scene.add(enemy);
+      return enemy;
+    });
+    const fleet = [player, ...enemies];
+    const maxFish = 3 + level;
+    const maxTreasure = islands.length * 25 + enemies.length * 90 + maxFish * 15;
+    function addShot(object, data = {}) {
+      Object.assign(object.userData, data);
+      shots.push(object);
+      scene.add(object);
+    }
+    function splash(position) {
+      const ring = new THREE.Mesh(geo("RingGeometry", 0.5, 2.8, 22), basic(0xbdefff, { transparent: true, opacity: 0.8, side: 2 }));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.copy(position);
+      addShot(ring, { life: 0.45 });
+    }
+    function trail(position, bad) {
+      const puff = mesh("SphereGeometry", [bad ? 0.34 : 0.42, 8, 8], basic(bad ? 0xff6a34 : 0xffe6a1, { transparent: true, opacity: 0.7 }));
+      puff.position.copy(position).add(new THREE.Vector3((Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.6));
+      addShot(puff, { life: 0.45, puff: 1 });
+    }
+    function ball(from, direction, bad = 0) {
+      const shot = mesh("SphereGeometry", [bad ? 0.45 : 0.65, 12, 12], mat(bad ? 0xff4e34 : 0x15120f, { emissive: bad ? 0x220000 : 0 }));
+      shot.position.copy(from).add(direction.clone().multiplyScalar(8)).add(new THREE.Vector3(0, 2.2, 0));
+      addShot(shot, { vx: direction.x * 42, vy: bad ? 9 : 14, vz: direction.z * 42, gravity: bad ? 16 : 18, life: 3, bad, hit: 1, trailClock: 0 });
+    }
+    function score(amount, bucket) {
+      treasure += amount;
+      if (bucket === "ship") shipGold += amount;
+      if (bucket === "island") islandGold += amount;
+      if (bucket === "fish") fishGold += amount;
+    }
+    function hit(enemy, position) {
+      enemy.userData.hp--;
+      score(10, "ship");
+      splash(position);
+      msg = `Hit! ${Math.max(0, enemy.userData.hp)} hp`;
+      if (enemy.userData.hp > 0) return;
+      score(60, "ship");
+      enemy.visible = false;
+      msg = "Sunk!";
+    }
+    function fire() {
+      const direction = new THREE.Vector3(Math.sin(heading), 0, Math.cos(heading));
+      ball(player.position, direction);
+      cool = 0.55;
+      msg = "Fire!";
+    }
+    function fish() {
+      if (fishCaught >= maxFish) {
+        msg = "No fish left";
+        return;
+      }
+      const position = player.position.clone().add(new THREE.Vector3(Math.sin(heading) * 5, 0, Math.cos(heading) * 5));
+      fishCaught++;
+      score(15, "fish");
+      splash(position);
+      msg = `Caught fish ${fishCaught}/${maxFish}! +15`;
+    }
+    function input(event, on) {
+      const key = event.key.toLowerCase();
+      const code = event.code;
+      if (code === "KeyR") location[done === 2 ? "search" : "href"] = done === 2 ? "?level=" + (level + 1) : location.href;
+      if (done) return;
+      if (["KeyW", "KeyA", "KeyS", "KeyD", "KeyE", "ArrowUp", "ArrowLeft", "ArrowDown", "ArrowRight", "Space", "KeyF"].includes(code)) event.preventDefault();
+      if (key === "w" || code === "ArrowUp") keys.up = on;
+      if (key === "s" || code === "ArrowDown") keys.down = on;
+      if (key === "a" || code === "ArrowLeft") keys.left = on;
+      if (key === "d" || code === "ArrowRight") keys.right = on;
+      if (on && (key === "e" || code === "KeyE")) fish();
+      if (code === "Space" || key === "f") keys.fire = on;
+    }
+    document.querySelector("#left").onpointerdown = () => keys.left = 1;
+    document.querySelector("#left").onpointerup = document.querySelector("#left").onpointerleave = () => keys.left = 0;
+    document.querySelector("#right").onpointerdown = () => keys.right = 1;
+    document.querySelector("#right").onpointerup = document.querySelector("#right").onpointerleave = () => keys.right = 0;
+    document.querySelector("#fish").onclick = () => fish();
+    renderer.domElement.addEventListener("pointerdown", () => renderer.domElement.focus());
+    addEventListener("keydown", (event) => input(event, 1));
+    addEventListener("keyup", (event) => input(event, 0));
+    addEventListener("resize", () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+    function updatePlayer() {
+      const turn = (keys.left ? 1 : 0) - (keys.right ? 1 : 0);
+      speed += keys.up ? 0.055 : 0;
+      speed -= keys.down ? 0.035 : 0;
+      speed *= 0.94;
+      speed = Math.max(-0.7, Math.min(1.35, speed));
+      heading += turn * 0.055;
+      player.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), heading);
+      player.position.x += Math.sin(heading) * speed + turn * 0.18;
+      player.position.z += Math.cos(heading) * speed;
+      if (keys.fire && cool <= 0) fire();
+      if (hullHp <= 0) done = 1;
+      if (!enemies.some((enemy) => enemy.userData.hp > 0)) done = 2;
+      if (done === 1) msg = "Wrecked! Press R";
+      if (done === 2) msg = "Victory! Fruit-hat fleet dance! Press R";
+    }
+    function updateWater(time) {
+      for (let i = 0; i < seaPos.count; i++) {
+        const x = seaPos.getX(i);
+        const y = seaPos.getY(i);
+        seaPos.setZ(i, Math.sin(x * 0.08 + time * 1.4) * 0.85 + Math.cos(y * 0.1 + time * 1.1) * 0.55 + Math.sin((x + y) * 0.18 + time * 2.6) * 0.18);
+      }
+      seaGeo.computeVertexNormals();
+      seaPos.needsUpdate = true;
+      for (let i = 0; i < foamPos.count; i++) {
+        foamPos.setZ(i, Math.sin(foamPos.getX(i) * 0.11 + time * 1.8) * 0.35 + Math.cos(foamPos.getY(i) * 0.15 + time * 1.4) * 0.22);
+      }
+      foamTexture.offset.set(time * 0.015, time * 0.01);
+      foamPos.needsUpdate = true;
+    }
+    function updateActors(time, dt) {
+      dancingSkeletons.forEach((bones, i) => {
+        bones.position.y = bones.userData.baseY + Math.sin(time * 5 + bones.userData.dance) * 0.25;
+        bones.rotation.z = Math.sin(time * 6 + i) * 0.18;
+        bones.rotation.y += Math.sin(time * 4 + i) * 0.01;
+      });
+      if (done === 2) fleet.forEach((boat, i) => {
+        boat.visible = true;
+        boat.userData.hat.visible = true;
+        boat.rotation.z = Math.sin(time * 5 + i) * 0.18;
+        boat.position.y = 1.4 + Math.sin(time * 6 + i) * 0.7;
+        boat.userData.dog.rotation.y = Math.sin(time * 10 + i) * 0.8;
+      });
+      enemies.forEach((enemy) => {
+        if (enemy.userData.hp <= 0) return;
+        const vector = player.position.clone().sub(enemy.position);
+        const distance = vector.length();
+        const direction = vector.normalize();
+        enemy.lookAt(player.position.x, 1.2, player.position.z);
+        enemy.position.addScaledVector(direction, Math.min(0.08, distance * 0.0009));
+        enemy.userData.cool -= dt;
+        if (distance < 48 && enemy.userData.cool <= 0) {
+          ball(enemy.position, direction, 1);
+          enemy.userData.cool = 1.7;
+        }
+      });
+    }
+    function updateTreasure() {
+      islands.forEach((island) => {
+        if (!island.userData.treasure || island.position.distanceTo(player.position) >= 15) return;
+        island.userData.treasure = 0;
+        island.scale.setScalar(0.86);
+        score(25, "island");
+      });
+    }
+    function updateShots(dt) {
+      shots.slice().forEach((shot) => {
+        shot.userData.life -= dt;
+        if (shot.userData.float) shot.position.y += dt * 3;
+        if (shot.userData.puff) shot.scale.multiplyScalar(1 + dt * 2.8);
+        if (shot.userData.puff) shot.material.opacity = Math.max(0, shot.userData.life * 1.6);
+        if (shot.userData.vx !== undefined) {
+          shot.userData.vy -= shot.userData.gravity * dt;
+          shot.position.x += shot.userData.vx * dt;
+          shot.position.y += shot.userData.vy * dt;
+          shot.position.z += shot.userData.vz * dt;
+          shot.userData.trailClock -= dt;
+          if (shot.userData.trailClock <= 0) trail(shot.position, shot.userData.bad);
+          if (shot.userData.trailClock <= 0) shot.userData.trailClock = 0.045;
+          if (shot.position.y <= 0.3) splash(shot.position);
+          if (shot.position.y <= 0.3) shot.userData.life = 0;
+        }
+        if (shot.userData.bad && shot.position.distanceTo(player.position) < 4) {
+          hullHp -= 8;
+          splash(shot.position);
+          shot.userData.life = 0;
+        }
+        enemies.forEach((enemy) => {
+          if (!shot.userData.hit || shot.userData.bad || enemy.userData.hp <= 0) return;
+          if (shot.position.distanceTo(enemy.position) >= 7) return;
+          hit(enemy, shot.position);
+          shot.userData.life = 0;
+        });
+        if (shot.userData.life > 0) return;
+        scene.remove(shot);
+        shots.splice(shots.indexOf(shot), 1);
+      });
+    }
+    function updateHud() {
+      const active = enemies.filter((enemy) => enemy.userData.hp > 0).length;
+      const found = islands.filter((island) => !island.userData.treasure).length;
+      const sunk = enemies.filter((enemy) => enemy.userData.hp <= 0).length;
+      const stars = "★★★★★☆☆☆☆☆".slice(5 - Math.ceil(Math.min(1, treasure / maxTreasure) * 5), 10 - Math.ceil(Math.min(1, treasure / maxTreasure) * 5));
+      scoreEl.textContent = `SCORE ${treasure}`;
+      hud.innerHTML = `Level ${level}<br><div id="bar"><div id="hp" style="width:${Math.max(0, Math.min(100, hullHp))}%"></div></div>Hull ${Math.max(0, Math.round(hullHp))}<br>Fish ${fishCaught}/${maxFish}<br>Enemy ships ${active}<br>${msg || "Ready"}<br>Fishing E/FISH`;
+      end.style.display = done ? "grid" : "none";
+      end.innerHTML = `${msg}<br>${stars}<br><span style="font-size:24px">Islands ${found}/${islands.length}: ${islandGold}/${islands.length * 25}<br>Ships ${sunk}/${enemies.length}: ${shipGold}/${enemies.length * 90}<br>Fish ${fishCaught}/${maxFish}: ${fishGold}/${maxFish * 15}<br>Total ${treasure}/${maxTreasure}<br>Press R to ${done === 2 ? "continue" : "retry"}</span>`;
+    }
+    function updateCamera() {
+      camera.position.lerp(player.position.clone().add(new THREE.Vector3(-Math.sin(heading) * zoom, 8 + zoom * 0.36, -Math.cos(heading) * zoom)), 0.12);
+      camera.lookAt(player.position.clone().add(new THREE.Vector3(Math.sin(heading) * 8, 3, Math.cos(heading) * 8)));
+    }
+    function tick() {
+      const dt = Math.min(clock.getDelta(), 0.033);
+      const time = clock.elapsedTime;
+      if (!done) updatePlayer();
+      player.position.y = 1.15 + Math.sin(time * 3) * 0.18;
+      cool -= dt;
+      updateWater(time);
+      updateActors(time, dt);
+      updateTreasure();
+      updateShots(dt);
+      updateCamera();
+      updateHud();
+      renderer.render(scene, camera);
+      requestAnimationFrame(tick);
+    }
+    tick();
+  </script>
+</body>
+</html>
