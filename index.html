@@ -166,12 +166,24 @@
     const fleet = [player, ...enemies];
     const maxFish = 3 + level;
     const maxTreasure = islands.length * 25 + enemies.length * 90 + maxFish * 15;
+    const taunts = ["Nice parking, dumbass", "Pay the bone tax", "Your boat smells like ass", "Piss off, treasure dork", "Eat barnacle dust", "well just fucking drive through our island why don't you"];
     function addShot(object, data = {}) {
       Object.assign(object.userData, data);
       shots.push(object);
       scene.add(object);
     }
-    function speak(pet) { const c = document.createElement("canvas"), x = c.getContext("2d"), text = pet.userData.cat ? haunted ? "hsss" : "meow" : haunted ? "grrr" : "bark"; c.width = 128; c.height = 64; x.fillStyle = "#fff"; x.strokeStyle = "#123"; x.lineWidth = 4; x.font = "700 20px Georgia"; x.strokeText(text, 32, 36); x.fillText(text, 32, 36); const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true })); pet.getWorldPosition(s.position); s.position.y += 3; s.scale.set(3.2, 1.6, 1); addShot(s, { life: 1, float: 1 }); }
+    function speak(pet, text = pet.userData.cat ? haunted ? "hsss" : "meow" : haunted ? "grrr" : "bark") {
+      const c = document.createElement("canvas"), x = c.getContext("2d"), words = text.split(" "), lines = [];
+      c.width = 512; c.height = 192; x.font = "900 32px Georgia";
+      words.forEach((word) => { const line = lines.at(-1) || ""; if (!lines.length || x.measureText(`${line} ${word}`).width > 430) lines.push(word); else lines[lines.length - 1] = `${line} ${word}`; });
+      x.fillStyle = "#fff8dc"; x.strokeStyle = "#151515"; x.lineWidth = 10; x.lineJoin = "round";
+      x.beginPath(); x.roundRect(18, 18, 476, 118, 28); x.moveTo(108, 136); x.lineTo(74, 174); x.lineTo(166, 136); x.closePath(); x.fill(); x.stroke();
+      x.fillStyle = "#1b120c"; x.strokeStyle = "#ffffff"; x.lineWidth = 5; x.textAlign = "center";
+      lines.slice(0, 3).forEach((line, i) => { x.strokeText(line, 256, 62 + i * 36); x.fillText(line, 256, 62 + i * 36); });
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthTest: false }));
+      pet.getWorldPosition(s.position); s.position.y += 4.2; s.scale.set(10, 3.75, 1); s.renderOrder = 20; addShot(s, { life: 2.6, float: 1 });
+    }
+    function burst(position, color = 0xffd36b) { for (let i = 0; i < 12; i++) { const p = mesh("SphereGeometry", [0.18 + Math.random() * 0.38, 8, 8], basic(color, { transparent: true, opacity: 0.85 })); p.position.copy(position).add(new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 3, (Math.random() - 0.5) * 4)); addShot(p, { life: 0.5 + Math.random() * 0.5, puff: 1 }); } }
     function splash(position) {
       const ring = new THREE.Mesh(geo("RingGeometry", 0.5, 2.8, 22), basic(0xbdefff, { transparent: true, opacity: 0.8, side: 2 }));
       ring.rotation.x = -Math.PI / 2;
@@ -202,10 +214,10 @@
       mist.scale.set(size * 5, size * 2.1, 1);
       addShot(mist, { life: 3.6, mist: 1 });
     }
-    function ball(from, direction, bad = 0) {
+    function ball(from, direction, bad = 0, owner = null) {
       const shot = mesh("SphereGeometry", [bad ? 0.45 : 0.65, 12, 12], mat(bad ? 0xff4e34 : 0x15120f, { emissive: bad ? 0x220000 : 0 }));
       shot.position.copy(from).add(direction.clone().multiplyScalar(8)).add(new THREE.Vector3(0, 2.2, 0));
-      addShot(shot, { vx: direction.x * 42, vy: bad ? 9 : 14, vz: direction.z * 42, gravity: bad ? 16 : 18, life: 3, bad, hit: 1, trailClock: 0 });
+      addShot(shot, { vx: direction.x * 42, vy: bad ? 9 : 14, vz: direction.z * 42, gravity: bad ? 16 : 18, life: 3, bad, hit: 1, trailClock: 0, owner });
     }
     function score(amount, bucket) {
       treasure += amount;
@@ -217,6 +229,8 @@
       enemy.userData.hp--;
       score(10, "ship");
       splash(position);
+      burst(position);
+      enemy.userData.squish = 1;
       msg = `Hit! ${Math.max(0, enemy.userData.hp)} hp`;
       if (enemy.userData.hp > 0) return;
       score(60, "ship");
@@ -286,12 +300,12 @@
     function updatePlayer() {
       const turn = (keys.left ? 1 : 0) - (keys.right ? 1 : 0);
       const slow = haunted ? 0.32 : 1;
-      speed += keys.up ? 0.055 : 0;
-      speed -= keys.down ? 0.035 : 0;
-      speed *= 0.94;
+      speed += keys.up ? 0.038 : 0;
+      speed -= keys.down ? 0.022 : 0;
+      speed *= 0.91;
       if (haunted) speed *= 0.88;
-      speed = Math.max(-0.7, Math.min(1.35, speed));
-      heading += turn * 0.055;
+      speed = Math.max(-0.45, Math.min(0.92, speed));
+      heading += turn * 0.036;
       player.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), heading);
       player.position.x += Math.sin(heading) * speed * slow + turn * 0.18 * slow;
       player.position.z += Math.cos(heading) * speed * slow;
@@ -330,6 +344,8 @@
       });
       fleet.forEach((boat) => { if (boat.visible && boat.userData.dog.visible && Math.random() < dt * (haunted ? 0.38 : 0.12)) speak(boat.userData.dog); });
       enemies.forEach((enemy) => {
+        if (enemy.userData.squish > 0) { enemy.userData.squish -= dt; enemy.rotation.z += dt * 7; enemy.scale.setScalar(1 + Math.sin(enemy.userData.squish * 18) * 0.35); }
+        if (enemy.userData.squish <= 0) enemy.scale.setScalar(1);
         if (enemy.userData.hp <= 0) return;
         const vector = player.position.clone().sub(enemy.position);
         const distance = vector.length();
@@ -338,7 +354,7 @@
         enemy.position.addScaledVector(direction, Math.min(0.08, distance * 0.0009));
         enemy.userData.cool -= dt;
         if (distance < 48 && enemy.userData.cool <= 0) {
-          ball(enemy.position, direction, 1);
+          ball(enemy.position, direction, 1, enemy);
           enemy.userData.cool = 1.7;
         }
       });
@@ -375,6 +391,7 @@
         island.userData.treasure = 0;
         island.scale.setScalar(0.86);
         score(25, "island");
+        island.children.filter((child) => child.userData.baseY).forEach((bones) => speak(bones, taunts[Math.random() * taunts.length | 0]));
       });
     }
     function updateShots(dt) {
@@ -402,7 +419,7 @@
           shot.userData.life = 0;
         }
         enemies.forEach((enemy) => {
-          if (!shot.userData.hit || shot.userData.bad || enemy.userData.hp <= 0) return;
+          if (!shot.userData.hit || enemy === shot.userData.owner || enemy.userData.hp <= 0) return;
           if (shot.position.distanceTo(enemy.position) >= 7) return;
           hit(enemy, shot.position);
           shot.userData.life = 0;
