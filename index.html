@@ -81,11 +81,14 @@
       return object;
     }
     function dog() {
-      const dog = new THREE.Group();
-      const parts = [["BoxGeometry", [1.4, 0.65, 2], 0x8a5a32, [0, 0.45, 0]], ["BoxGeometry", [0.8, 0.7, 0.8], 0x8a5a32, [0, 0.75, 1.05]], ["ConeGeometry", [0.25, 0.6, 4], 0x2b1b12, [-0.55, 1.05, 1.08]], ["ConeGeometry", [0.25, 0.6, 4], 0x2b1b12, [0.55, 1.05, 1.08]], ["CylinderGeometry", [0.08, 0.08, 1.1], 0x2b1b12, [0, 0.65, -1.25], [1.2, 0, 0]]];
-      parts.forEach((p) => dog.add(part(...p)));
-      dog.position.set(1.8, 2.35, -4.1);
-      return dog;
+      const pet = new THREE.Group();
+      const cat = Math.random() < 0.51;
+      const fur = cat ? 0x2f3038 : 0x8a5a32;
+      const parts = [["BoxGeometry", [1.4, 0.65, 2], fur, [0, 0.45, 0]], ["BoxGeometry", [0.8, 0.7, 0.8], fur, [0, 0.75, 1.05]], ["ConeGeometry", [0.25, 0.6, 4], 0x2b1b12, [-0.55, 1.05, 1.08]], ["ConeGeometry", [0.25, 0.6, 4], 0x2b1b12, [0.55, 1.05, 1.08]], ["CylinderGeometry", [0.08, 0.08, cat ? 1.8 : 1.1], 0x2b1b12, [0, 0.65, -1.25], [cat ? 0.65 : 1.2, 0, 0]]];
+      parts.forEach((p) => pet.add(part(...p)));
+      if (cat) [-1, 1].forEach((s) => pet.add(part("CylinderGeometry", [0.025, 0.025, 1.1], 0xf8f3df, [s * 0.65, 0.78, 1.45], [0, 0, s * 1.25])));
+      pet.userData.cat = cat; pet.position.set(1.8, 2.35, -4.1);
+      return pet;
     }
     function fruitHat() {
       const hat = new THREE.Group();
@@ -144,7 +147,8 @@
     const player = hull(0x74361d);
     scene.add(put(player, 0, 1.2, 0));
     let speed = 0, heading = 0, treasure = 0, islandGold = 0, shipGold = 0, fishGold = 0;
-    let fishCaught = 0, hullHp = 100, cool = 0, zoom = 28, msg = "", done = 0;
+    let fishCaught = 0, hullHp = 100, cool = 0, zoom = 28, msg = "", endMsg = "", done = 0;
+    let ghost = null, haunted = 0, ghostFog = 0, ghostEscape = 0;
     const islands = Array.from({ length: 3 + level }, (_, i) => {
       const angle = i * 6.28 / (3 + level) + 0.6;
       const radius = 58 + level * 8 + (i % 2) * 32;
@@ -167,6 +171,7 @@
       shots.push(object);
       scene.add(object);
     }
+    function speak(pet) { const c = document.createElement("canvas"), x = c.getContext("2d"), text = pet.userData.cat ? haunted ? "hsss" : "meow" : haunted ? "grrr" : "bark"; c.width = 128; c.height = 64; x.fillStyle = "#fff"; x.strokeStyle = "#123"; x.lineWidth = 4; x.font = "700 20px Georgia"; x.strokeText(text, 32, 36); x.fillText(text, 32, 36); const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true })); pet.getWorldPosition(s.position); s.position.y += 3; s.scale.set(3.2, 1.6, 1); addShot(s, { life: 1, float: 1 }); }
     function splash(position) {
       const ring = new THREE.Mesh(geo("RingGeometry", 0.5, 2.8, 22), basic(0xbdefff, { transparent: true, opacity: 0.8, side: 2 }));
       ring.rotation.x = -Math.PI / 2;
@@ -177,6 +182,25 @@
       const puff = mesh("SphereGeometry", [bad ? 0.34 : 0.42, 8, 8], basic(bad ? 0xff6a34 : 0xffe6a1, { transparent: true, opacity: 0.7 }));
       puff.position.copy(position).add(new THREE.Vector3((Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.6));
       addShot(puff, { life: 0.45, puff: 1 });
+    }
+    function ghostMist(position, size = 4) {
+      if (!ghostMist.map) {
+        const canvas = document.createElement("canvas");
+        const paint = canvas.getContext("2d");
+        canvas.width = canvas.height = 128;
+        for (let i = 0; i < 9; i++) {
+          const gradient = paint.createRadialGradient(64 + (Math.random() - 0.5) * 42, 64 + (Math.random() - 0.5) * 28, 2, 64, 64, 58);
+          gradient.addColorStop(0, "#dfffff55");
+          gradient.addColorStop(1, "#dfffff00");
+          paint.fillStyle = gradient;
+          paint.fillRect(0, 0, 128, 128);
+        }
+        ghostMist.map = new THREE.CanvasTexture(canvas);
+      }
+      const mist = new THREE.Sprite(new THREE.SpriteMaterial({ map: ghostMist.map, color: 0xcff7ff, transparent: true, opacity: 0.2, depthWrite: false }));
+      mist.position.copy(position).add(new THREE.Vector3((Math.random() - 0.5) * 12, 2.2, (Math.random() - 0.5) * 12));
+      mist.scale.set(size * 5, size * 2.1, 1);
+      addShot(mist, { life: 3.6, mist: 1 });
     }
     function ball(from, direction, bad = 0) {
       const shot = mesh("SphereGeometry", [bad ? 0.45 : 0.65, 12, 12], mat(bad ? 0xff4e34 : 0x15120f, { emissive: bad ? 0x220000 : 0 }));
@@ -215,6 +239,23 @@
       score(15, "fish");
       splash(position);
       msg = `Caught fish ${fishCaught}/${maxFish}! +15`;
+      if (!ghost && Math.random() < Math.min(0.42, 0.18 + level * 0.03)) spawnGhost();
+    }
+    function spawnGhost() {
+      const angle = heading + (Math.random() < 0.5 ? 1 : -1) * 0.9;
+      ghost = put(hull(0x9fe8ff), player.position.x + Math.sin(angle) * 38, 1.2, player.position.z + Math.cos(angle) * 38);
+      ghost.scale.setScalar(1.45);
+      ghost.traverse((part) => {
+        if (!part.material) return;
+        part.material = part.material.clone();
+        part.material.transparent = true;
+        part.material.opacity = 0.48;
+        part.material.emissive = new THREE.Color(0x145566);
+      });
+      ghost.userData.dog.visible = false;
+      ghost.add(put(mesh("SphereGeometry", [3.2, 16, 10], basic(0xbfffff, { transparent: true, opacity: 0.75, depthWrite: false })), 0, 7.8, 0));
+      scene.add(ghost);
+      msg = "Ghost ship summoned!";
     }
     function input(event, on) {
       const key = event.key.toLowerCase();
@@ -244,19 +285,21 @@
     });
     function updatePlayer() {
       const turn = (keys.left ? 1 : 0) - (keys.right ? 1 : 0);
+      const slow = haunted ? 0.32 : 1;
       speed += keys.up ? 0.055 : 0;
       speed -= keys.down ? 0.035 : 0;
       speed *= 0.94;
+      if (haunted) speed *= 0.88;
       speed = Math.max(-0.7, Math.min(1.35, speed));
       heading += turn * 0.055;
       player.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), heading);
-      player.position.x += Math.sin(heading) * speed + turn * 0.18;
-      player.position.z += Math.cos(heading) * speed;
+      player.position.x += Math.sin(heading) * speed * slow + turn * 0.18 * slow;
+      player.position.z += Math.cos(heading) * speed * slow;
       if (keys.fire && cool <= 0) fire();
       if (hullHp <= 0) done = 1;
       if (!enemies.some((enemy) => enemy.userData.hp > 0)) done = 2;
-      if (done === 1) msg = "Wrecked! Press R";
-      if (done === 2) msg = "Victory! Fruit-hat fleet dance! Press R";
+      if (done === 1) endMsg = msg = "Wrecked! Press R";
+      if (done === 2) endMsg = msg = "Victory! Fruit-hat fleet dance! Press R";
     }
     function updateWater(time) {
       for (let i = 0; i < seaPos.count; i++) {
@@ -285,6 +328,7 @@
         boat.position.y = 1.4 + Math.sin(time * 6 + i) * 0.7;
         boat.userData.dog.rotation.y = Math.sin(time * 10 + i) * 0.8;
       });
+      fleet.forEach((boat) => { if (boat.visible && boat.userData.dog.visible && Math.random() < dt * (haunted ? 0.38 : 0.12)) speak(boat.userData.dog); });
       enemies.forEach((enemy) => {
         if (enemy.userData.hp <= 0) return;
         const vector = player.position.clone().sub(enemy.position);
@@ -298,6 +342,32 @@
           enemy.userData.cool = 1.7;
         }
       });
+      updateGhost(time, dt);
+    }
+    function updateGhost(time, dt) {
+      haunted = 0;
+      if (!ghost) return;
+      const vector = player.position.clone().sub(ghost.position);
+      const distance = vector.length();
+      const direction = vector.normalize();
+      ghost.lookAt(player.position.x, 1.2, player.position.z);
+      ghost.position.addScaledVector(direction, Math.min(0.13, distance * 0.0015));
+      ghost.position.y = 1.2 + Math.sin(time * 4) * 0.45;
+      ghostFog -= dt;
+      if (distance < 85 && ghostFog <= 0) {
+        ghostMist(ghost.position, distance < 34 ? 6 : 4);
+        if (distance < 34) ghostMist(player.position.clone().lerp(ghost.position, 0.5), 5);
+        ghostFog = distance < 34 ? 0.38 : 0.75;
+      }
+      if (distance < 34) {
+        haunted = 1;
+        ghostEscape = 0;
+        if (Math.random() < dt * 3) splash(player.position.clone().lerp(ghost.position, 0.5));
+        msg = "Haunted! Sails dragged";
+      } else if (distance > 62) {
+        ghostEscape += dt;
+        if (ghostEscape > 2.2) msg = "Ghost still hunting";
+      }
     }
     function updateTreasure() {
       islands.forEach((island) => {
@@ -311,6 +381,8 @@
       shots.slice().forEach((shot) => {
         shot.userData.life -= dt;
         if (shot.userData.float) shot.position.y += dt * 3;
+        if (shot.userData.mist) shot.scale.multiplyScalar(1 + dt * 0.18);
+        if (shot.userData.mist) shot.material.opacity = Math.max(0, shot.userData.life * 0.045);
         if (shot.userData.puff) shot.scale.multiplyScalar(1 + dt * 2.8);
         if (shot.userData.puff) shot.material.opacity = Math.max(0, shot.userData.life * 1.6);
         if (shot.userData.vx !== undefined) {
@@ -346,9 +418,9 @@
       const sunk = enemies.filter((enemy) => enemy.userData.hp <= 0).length;
       const stars = "★★★★★☆☆☆☆☆".slice(5 - Math.ceil(Math.min(1, treasure / maxTreasure) * 5), 10 - Math.ceil(Math.min(1, treasure / maxTreasure) * 5));
       scoreEl.textContent = `SCORE ${treasure}`;
-      hud.innerHTML = `Level ${level}<br><div id="bar"><div id="hp" style="width:${Math.max(0, Math.min(100, hullHp))}%"></div></div>Hull ${Math.max(0, Math.round(hullHp))}<br>Fish ${fishCaught}/${maxFish}<br>Enemy ships ${active}<br>${msg || "Ready"}<br>Fishing E/FISH`;
+      hud.innerHTML = `Level ${level}<br><div id="bar"><div id="hp" style="width:${Math.max(0, Math.min(100, hullHp))}%"></div></div>Hull ${Math.max(0, Math.round(hullHp))}<br>Fish ${fishCaught}/${maxFish}<br>Enemy ships ${active}<br>${msg || "Ready"}<br>${ghost ? haunted ? "HAUNTED: speed 32%" : "Ghost nearby" : "Fishing E/FISH"}`;
       end.style.display = done ? "grid" : "none";
-      end.innerHTML = `${msg}<br>${stars}<br><span style="font-size:24px">Islands ${found}/${islands.length}: ${islandGold}/${islands.length * 25}<br>Ships ${sunk}/${enemies.length}: ${shipGold}/${enemies.length * 90}<br>Fish ${fishCaught}/${maxFish}: ${fishGold}/${maxFish * 15}<br>Total ${treasure}/${maxTreasure}<br>Press R to ${done === 2 ? "continue" : "retry"}</span>`;
+      end.innerHTML = `${endMsg || msg}<br>${stars}<br><span style="font-size:24px">Islands ${found}/${islands.length}: ${islandGold}/${islands.length * 25}<br>Ships ${sunk}/${enemies.length}: ${shipGold}/${enemies.length * 90}<br>Fish ${fishCaught}/${maxFish}: ${fishGold}/${maxFish * 15}<br>Total ${treasure}/${maxTreasure}<br>Press R to ${done === 2 ? "continue" : "retry"}</span>`;
     }
     function updateCamera() {
       camera.position.lerp(player.position.clone().add(new THREE.Vector3(-Math.sin(heading) * zoom, 8 + zoom * 0.36, -Math.cos(heading) * zoom)), 0.12);
